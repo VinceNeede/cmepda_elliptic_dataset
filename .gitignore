@@ -210,3 +210,7 @@ __marimo__/
 # models and datasets
 *.csv
 *.joblib
+*.png
+*.out
+main.py
+*.json
