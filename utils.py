@@ -236,6 +236,12 @@ def temporal_split(nodes_df, test_size=0.2, return_X_y=True):
     X_test, y_test = test_df.drop(columns=['class']), test_df['class']
     return (X_train, y_train), (X_test, y_test)
 
+def load_labeled_data():
+    nodes_df, edges_df = process_dataset()
+    nodes_df = nodes_df[nodes_df['class'] != -1] # select only labeled data
+    (X_train, y_train), (X_test, y_test) = temporal_split(nodes_df, test_size=0.2)
+    return (X_train, y_train), (X_test, y_test)
+
 def pr_auc_score(y_true, y_pred_proba):
     """
     Calculate Precision-Recall AUC score.
@@ -304,7 +310,7 @@ def plot_marginals(cv_results, max_ticks=10):
     """
     results = pd.DataFrame(cv_results)
     param_names = [col for col in results.columns if col.startswith('param_')]
-    figs = Dict()
+    figs = dict()
     for param in param_names:
         fig, ax = plt.subplots()
         # Group by the parameter and compute mean test score
