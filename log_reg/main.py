@@ -7,11 +7,15 @@ import sys
 sys.path.append('../')
 from utils import *
 
+import joblib
+import json
+
+import matplotlib.pyplot as plt
+
+
 from sklearn.model_selection import GridSearchCV
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
-import matplotlib.pyplot as plt
-import joblib
 from sklearn.model_selection import ValidationCurveDisplay
 
 
@@ -81,6 +85,9 @@ def hyperparams_search(
     grid.fit(X_train, y_train)
 
     joblib.dump(grid, 'grid.joblib')
+
+    with open('grid_best_params.json', 'w') as f:
+        json.dump(grid.best_params_, f, indent=2)
 
     marginals = plot_marginals(grid.cv_results_)
 
