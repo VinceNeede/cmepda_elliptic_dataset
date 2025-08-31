@@ -1,10 +1,8 @@
 import os
-
-# Change working directory to the script's directory
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 import sys
-sys.path.append('../')
+sys.path.append('./')
 from utils import *
 
 import joblib
@@ -47,9 +45,6 @@ def main():
         raise ValueError(f"Unknown entry point: {args.entry}")
     globals()[args.entry](**kwargs)
 
-if __name__ == "__main__":
-    main()
-
 def _load_data():
     nodes_df, edges_df = process_dataset()
     nodes_df = nodes_df[nodes_df['class'] != -1] # select only labeled data
@@ -84,15 +79,15 @@ def hyperparams_search(
 
     grid.fit(X_train, y_train)
 
-    joblib.dump(grid, 'grid.joblib')
+    joblib.dump(grid, os.path.join(SCRIPT_DIR, 'grid.joblib'))
 
-    with open('grid_best_params.json', 'w') as f:
+    with open(os.path.join(SCRIPT_DIR, 'grid_best_params.json'), 'w') as f:
         json.dump(grid.best_params_, f, indent=2)
 
     marginals = plot_marginals(grid.cv_results_)
 
     for param, fig in marginals.items():
-        fig.savefig(f'{param}_marginal.png', bbox_inches='tight', dpi=300)
+        fig.savefig(os.path.join(SCRIPT_DIR, f'{param}_marginal.png'), bbox_inches='tight', dpi=300)
         plt.close(fig)
 
 def validation_curve(
@@ -103,7 +98,7 @@ def validation_curve(
     est_params=dict(est__penalty='l2')
 ):
     (X_train, y_train), (X_test, y_test) = _load_data()
-    grid = joblib.load('grid.joblib')
+    grid = joblib.load(os.path.join(SCRIPT_DIR, 'grid.joblib'))
     best_est = grid.best_estimator_
 
     best_est.set_params(**est_params)
@@ -121,23 +116,26 @@ def validation_curve(
         verbose=verbose,
     )
 
-    plt.savefig('validation_curve.png', bbox_inches='tight', dpi=300)
+    plt.savefig(os.path.join(SCRIPT_DIR, 'validation_curve.png'), bbox_inches='tight', dpi=300)
     plt.close()
 
 def evaluation(
     est_params=dict(est__penalty='l2', est__C=200)
 ):
     (X_train, y_train), (X_test, y_test) = _load_data()
-    grid = joblib.load('grid.joblib')
+    grid = joblib.load(os.path.join(SCRIPT_DIR, 'grid.joblib'))
     best_est = grid.best_estimator_
 
     best_est.set_params(**est_params)
 
     best_est.fit(X_train, y_train)
-    joblib.dump(best_est, 'model.joblib')
+    joblib.dump(best_est, os.path.join(SCRIPT_DIR, 'model.joblib'))
 
     pr_fig, temporal_fig = plot_evals(best_est, X_test, y_test, y_train)
-    pr_fig.savefig('precision_recall_curve.png', bbox_inches='tight', dpi=300)
-    temporal_fig.savefig('temporal_eval.png', bbox_inches='tight', dpi=300)
+    pr_fig.savefig(os.path.join(SCRIPT_DIR, 'precision_recall_curve.png'), bbox_inches='tight', dpi=300)
+    temporal_fig.savefig(os.path.join(SCRIPT_DIR, 'temporal_eval.png'), bbox_inches='tight', dpi=300)
     plt.close(pr_fig)
     plt.close(temporal_fig)
+
+if __name__ == "__main__":
+    main()
