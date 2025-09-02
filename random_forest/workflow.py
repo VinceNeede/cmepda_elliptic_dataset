@@ -23,7 +23,7 @@ def hyperparams_search(
         "est__max_depth": [None, 10, 20, 30],
         "est__min_samples_split": randint(2, 10),
         "est__class_weight": [None, "balanced", "balanced_subsample"],
-        "est__max_features": uniform(0.1, 1.0)
+        "est__max_features": uniform(0.1, 0.9)
     },
     n_iter=50,
     n_splits=5,
