@@ -1,12 +1,20 @@
-from ast import Dict
+
+# Standard library imports
 import os
+import warnings
+from functools import singledispatch, partial
 
-import joblib
-import pandas as pd
+# Third-party imports
 import numpy as np
-
+import pandas as pd
+import torch
+import joblib
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import precision_recall_curve, auc, make_scorer
+import matplotlib.pyplot as plt
+from sklearn.base import BaseEstimator, TransformerMixin
+
+# Project-specific imports (none in this file)
 
 def process_dataset(
     folder_path: str = "elliptic_bitcoin_dataset",
@@ -171,65 +179,138 @@ class TemporalRollingCV(TimeSeriesSplit):
         """
         # Get time values
         if hasattr(X, self.time_col) and isinstance(getattr(X, self.time_col), pd.Series):
-            times = getattr(X, self.time_col)
+            times = getattr(X, self.time_col).values
         elif groups is not None:
             times = groups
         else:
             raise ValueError(f"X must have a '{self.time_col}' column or time values must be passed as groups")
         
+        if isinstance(times, np.ndarray) or isinstance(times, pd.Series):
+            mod = np
+        elif isinstance(times, torch.Tensor):
+            mod = torch
+        else:
+            raise ValueError("times must be a numpy array, torch tensor, or pandas Series")        
+
         # Get unique time steps and sort
-        unique_times = np.sort(np.unique(times))
+        unique_times = mod.unique(times)
         for train_times, test_times in super().split(unique_times):
-            train_mask = np.isin(times, unique_times[train_times])
-            test_mask = np.isin(times, unique_times[test_times])
-            train_indices = np.where(train_mask)[0]
-            test_indices = np.where(test_mask)[0]
+            train_mask = mod.isin(times, unique_times[train_times])
+            test_mask = mod.isin(times, unique_times[test_times])
+            train_indices = mod.where(train_mask)[0]
+            test_indices = mod.where(test_mask)[0]
             yield train_indices, test_indices
 
-def temporal_split(nodes_df, test_size=0.2, return_X_y=True):
+@singledispatch
+def temporal_split(times, test_size=0.2):
     """
-    Split a DataFrame into temporal train and test sets based on the 'time' column.
+    Split data into temporal train/test sets based on unique time steps.
 
     Parameters
     ----------
-    nodes_df : pandas.DataFrame
-        DataFrame containing node features, a 'class' column for labels, and a 'time' column for time steps.
+    times : np.ndarray, torch.Tensor, or pandas.DataFrame
+        The time information or data to split. For DataFrames, must contain a 'time' column.
     test_size : float, default=0.2
         Proportion of unique time steps to include in the test split (between 0.0 and 1.0).
-    return_X_y : bool, default=True
-        If True, return (X_train, y_train), (X_test, y_test) tuples (features and labels split out).
-        If False, return train_df, test_df DataFrames (with all columns).
 
     Returns
     -------
-    (X_train, y_train), (X_test, y_test) : tuple of tuples, if return_X_y is True
-        X_train : pandas.DataFrame
-            Training features (all columns except 'class').
-        y_train : pandas.Series
-            Training labels (the 'class' column).
-        X_test : pandas.DataFrame
-            Test features (all columns except 'class').
-        y_test : pandas.Series
-            Test labels (the 'class' column).
-    train_df, test_df : pandas.DataFrame, if return_X_y is False
-        The full training and test DataFrames, including all columns.
+    For array/tensor input:
+        train_indices, test_indices : array-like
+            Indices for training and test sets.
+    For DataFrame input:
+        (X_train, y_train), (X_test, y_test) : tuple of tuples
+            X_train : pandas.DataFrame
+                Training features (all columns except 'class').
+            y_train : pandas.Series
+                Training labels (the 'class' column).
+            X_test : pandas.DataFrame
+                Test features (all columns except 'class').
+            y_test : pandas.Series
+                Test labels (the 'class' column).
+        Or, if return_X_y=False:
+            train_df, test_df : pandas.DataFrame
+                The full training and test DataFrames, already sliced by time.
 
-    Notes
-    -----
-    - The split is performed by sorting unique time steps and assigning the earliest (1 - test_size) fraction to training, and the latest fraction to testing.
-    - All rows with a time in the training time steps go to the training set; all rows with a time in the test time steps go to the test set.
-    - This function is useful for temporal datasets where future data should not be used to predict past data.
+    Type-specific behavior
+    ---------------------
+    - np.ndarray: Uses numpy operations to split by unique time values.
+    - torch.Tensor: Uses torch operations to split by unique time values (no CPU/GPU transfer).
+    - pandas.DataFrame: Splits based on the 'time' column. If return_X_y=True, unpacks X and y based on the 'class' column; otherwise, returns the sliced DataFrames.
+
     """
-    unique_times = np.sort(nodes_df['time'].unique())
+    raise NotImplementedError("temporal_split not implemented for this type")
+
+def _temporal_split(times, mod, test_size):
+    """
+    Core logic for temporal splitting, used by temporal_split for both numpy and torch arrays.
+    Issues a warning if n_train or n_test is zero.
+    Parameters
+    ----------
+    times : array-like
+        Array of time values (numpy or torch).
+    mod : module
+        Module to use (np or torch) for unique, isin, where.
+    test_size : float
+        Proportion of unique time steps to include in the test split.
+    Returns
+    -------
+    train_indices, test_indices : array-like
+        Indices for training and test sets.
+    """
+    unique_times = mod.unique(times)
     n_test = int(len(unique_times) * test_size)
     n_train = len(unique_times) - n_test
-    
+
+    if n_train == 0 or n_test == 0:
+        msg = (
+            f"temporal_split: n_train or n_test is zero. "
+            f"n_train={n_train}, n_test={n_test}, total unique_times={len(unique_times)}. "
+            f"Check your test_size ({test_size}) and data."
+        )
+        if n_train == 0:
+            msg += " All data assigned to test set."
+        if n_test == 0:
+            msg += " All data assigned to train set."
+        warnings.warn(msg)
+
     train_times = unique_times[:n_train]
     test_times = unique_times[n_train:]
-    
-    train_df = nodes_df[nodes_df['time'].isin(train_times)].reset_index(drop=True)
-    test_df = nodes_df[nodes_df['time'].isin(test_times)].reset_index(drop=True)
-    
+    train_mask = mod.isin(times, train_times)
+    test_mask = mod.isin(times, test_times)
+
+    train_indices = mod.where(train_mask)[0]
+    test_indices = mod.where(test_mask)[0]
+    return train_indices, test_indices
+
+@temporal_split.register(np.ndarray)
+def _(times, test_size=0.2):
+    """
+    Temporal split for numpy arrays.
+    See _temporal_split for details.
+    """
+    return _temporal_split(times, np, test_size)
+
+@temporal_split.register(torch.Tensor)
+def _(times, test_size=0.2):
+    """
+    Temporal split for torch tensors.
+    See _temporal_split for details.
+    """
+    return _temporal_split(times, torch, test_size)
+
+@temporal_split.register(pd.DataFrame)
+def _(nodes_df, test_size=0.2, return_X_y=True):
+    """
+    Temporal split for pandas DataFrames.
+    Splits based on the 'time' column. If return_X_y=True, returns (X_train, y_train), (X_test, y_test) tuples;
+    otherwise, returns the full train/test DataFrames.
+    """
+    train_indices, test_indices = temporal_split(nodes_df['time'].values, test_size=test_size)
+
+    train_df = nodes_df.iloc[train_indices].reset_index(drop=True)
+    test_df = nodes_df.iloc[test_indices].reset_index(drop=True)
+
     if not return_X_y:
         return train_df, test_df
     X_train, y_train = train_df.drop(columns=['class']), train_df['class']
@@ -237,6 +318,14 @@ def temporal_split(nodes_df, test_size=0.2, return_X_y=True):
     return (X_train, y_train), (X_test, y_test)
 
 def load_labeled_data():
+    """
+    Loads the processed dataset and returns only labeled data, split temporally into train and test sets.
+    Returns
+    -------
+    (X_train, y_train), (X_test, y_test) : tuple of tuples
+        X_train, y_train: training features and labels
+        X_test, y_test: test features and labels
+    """
     nodes_df, edges_df = process_dataset()
     nodes_df = nodes_df[nodes_df['class'] != -1] # select only labeled data
     (X_train, y_train), (X_test, y_test) = temporal_split(nodes_df, test_size=0.2)
@@ -283,6 +372,9 @@ pr_auc_scorer = make_scorer(pr_auc_score, greater_is_better=True, response_metho
 import matplotlib.pyplot as plt
 
 def _get_marginals_ticks(x_labels, N=10):
+    """
+    Helper for plot_marginals: reduces the number of x-ticks for readability.
+    """
     x = list(range(len(x_labels)))  # or use the actual tick positions if available
     if len(x_labels) > N:
         step = max(1, len(x_labels) // N)
@@ -434,6 +526,10 @@ def plot_evals(est, X_test, y_test, y_train,*, time_steps_test=None):
 from sklearn.base import BaseEstimator, TransformerMixin
 
 class DropTime(BaseEstimator, TransformerMixin):
+    """
+    Transformer for dropping the 'time' column from a DataFrame.
+    Useful in scikit-learn pipelines.
+    """
     def __init__(self, drop=True):
         self.drop=drop
     def fit(self, X, y=None):
@@ -442,3 +538,53 @@ class DropTime(BaseEstimator, TransformerMixin):
         if self.drop:
             return X.drop(columns=["time"])
         return X
+    
+def skorch_splitter(indices, y=None, test_size=0.2, times=None):
+    """
+    Custom splitter for skorch that performs a temporal split using pre-bound times and test_size.
+    Parameters
+    ----------
+    indices : array-like
+        Indices of the data to split (as provided by skorch).
+    y : array-like, optional
+        Labels (ignored, present for compatibility).
+    test_size : float, default=0.2
+        Proportion of unique time steps to include in the test split.
+    times : array-like
+        Array of time values for the full dataset.
+    Returns
+    -------
+    train_indices, test_indices : array-like
+        Indices for training and test sets (relative to the input indices).
+    """
+    return temporal_split(times[indices], test_size=test_size)
+
+def make_skorch_splitter(times, test_size=0.2):
+    """
+    Factory for skorch-compatible splitter with pre-bound times and test_size.
+    Returns a function suitable for use as the train_split argument in skorch.
+    Parameters
+    ----------
+    times : array-like
+        Array of time values for the full dataset.
+    test_size : float, default=0.2
+        Proportion of unique time steps to include in the test split.
+    Returns
+    -------
+    splitter : function
+        A function with signature (indices, y=None) that returns train/test indices.
+    """
+    return partial(skorch_splitter, times=times, test_size=test_size)
+
+class IndexedEcho:
+    """
+    Dummy indexable object that returns its input index argument.
+    Useful for simulating a dataset of a given length where __getitem__ simply echoes the index.
+    Can be used for testing or as a placeholder in cross-validation routines.
+    """
+    def __init__(self, len):
+        self.len = len
+    def __len__(self):
+        return self.len
+    def __getitem__(self, idx):
+        return idx
