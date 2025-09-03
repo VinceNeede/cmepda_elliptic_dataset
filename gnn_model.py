@@ -1,7 +1,9 @@
+from logging import warn
 from sklearn.base import BaseEstimator, ClassifierMixin
 import torch
 import numpy as np
 import warnings
+from torch_geometric.nn import GAT, GCN
 
 class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
     """
@@ -125,6 +127,7 @@ class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
         n_iter_no_change=10,
         tol=1e-4,
         device='auto',
+        heads=None,
         **kwargs,
         ):
         super().__init__()
@@ -141,6 +144,7 @@ class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
         self.tol = tol
         self.device = device  # Store original device parameter
         self.device_ = self._validate_device(device)  # Store validated device
+        self.heads = heads
         self.kwargs = kwargs
         
         # Move data to device
@@ -149,6 +153,19 @@ class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
         # Set classes_ attribute for sklearn compatibility
         self.classes_ = np.array([0, 1])
         
+        # Handle heads parameter properly
+        if heads is not None and model != GAT:
+            warnings.warn("'heads' parameter is only applicable for GAT model. Ignoring 'heads'.", UserWarning)
+            self.heads = heads  # Store for sklearn but don't use
+        elif model == GAT:
+            # For GAT, use heads if provided, otherwise default to 1
+            actual_heads = heads if heads is not None else 1
+            self.heads = actual_heads
+            self.kwargs['heads'] = actual_heads
+        else:
+            # For non-GAT models with heads=None
+            self.heads = heads
+
         if self.verbose:
             print(f"Using device: {self.device_}")
 
@@ -266,7 +283,7 @@ class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
         
         return self
     
-    def predict(self, X, y=None):
+    def predict(self, X):
         """
         Predict class labels for samples in test_indices.
         
@@ -301,7 +318,7 @@ class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
             predictions = torch.sigmoid(out[test_indices]) > 0.5
             return predictions.int().cpu().numpy()
     
-    def predict_proba(self, X, y=None):
+    def predict_proba(self, X):
         """
         Predict class probabilities for samples in test_indices.
         
