@@ -10,7 +10,7 @@ import pandas as pd
 import torch
 import joblib
 from sklearn.model_selection import TimeSeriesSplit
-from sklearn.metrics import precision_recall_curve, auc, make_scorer
+from sklearn.metrics import precision_recall_curve, auc, make_scorer, average_precision_score
 import matplotlib.pyplot as plt
 from sklearn.base import BaseEstimator, TransformerMixin
 
@@ -138,9 +138,10 @@ class TemporalRollingCV(TimeSeriesSplit):
     >>> 
     >>> # With GridSearchCV
     >>> from sklearn.model_selection import GridSearchCV
-    >>> from elliptic_utils.evaluation import pr_auc_scorer
+    >>> from sklearn.metrics import average_precision_score, make_scorer
     >>> cv = TemporalRollingCV(n_splits=3, test_size=1)
-    >>> grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=cv, scoring=pr_auc_scorer)
+    >>> scorer = make_scorer(average_precision_score, response_method="predict_proba")
+    >>> grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=cv, scoring=scorer)
     >>> grid_search.fit(df, df['class'])
     """
     def __init__(self, n_splits=5, *, test_size=None, max_train_size=None, gap=0, time_col='time'):
@@ -331,43 +332,7 @@ def load_labeled_data():
     (X_train, y_train), (X_test, y_test) = temporal_split(nodes_df, test_size=0.2)
     return (X_train, y_train), (X_test, y_test)
 
-def pr_auc_score(y_true, y_pred_proba):
-    """
-    Calculate Precision-Recall AUC score.
-    
-    Parameters:
-    -----------
-    y_true : array-like
-        True binary labels
-    y_pred_proba : array-like
-        Predicted probabilities for the positive class
-        
-    Returns:
-    --------
-    float
-        PR AUC score
-        
-    Examples:
-    ---------
-    >>> from sklearn.datasets import make_classification
-    >>> from sklearn.ensemble import RandomForestClassifier
-    >>> X, y = make_classification(random_state=42)
-    >>> clf = RandomForestClassifier(random_state=42).fit(X, y)
-    >>> y_prob = clf.predict_proba(X)[:, 1]
-    >>> pr_auc_score(y, y_prob)
-    """
-    # Handle case where y_pred_proba is a 2D array (output from predict_proba)
-    if hasattr(y_pred_proba, 'ndim') and y_pred_proba.ndim == 2:
-        y_pred_proba = y_pred_proba[:, 1]
-    
-    # Calculate precision-recall curve and AUC
-    precision, recall, _ = precision_recall_curve(y_true, y_pred_proba)
-    pr_auc = auc(recall, precision)
-    
-    return pr_auc
 
-# Create a scorer for use with GridSearchCV
-pr_auc_scorer = make_scorer(pr_auc_score, greater_is_better=True, response_method="predict_proba")
 
 import matplotlib.pyplot as plt
 
@@ -479,12 +444,12 @@ def plot_evals(est, X_test, y_test, y_train,*, time_steps_test=None):
         # Select data up to and including the current time step
         current_data = results_df[results_df['time'] <= cutoff_time]
         
-        current_pr_auc = pr_auc_score(current_data['actual'], current_data['pred_proba'])
+        current_ap = average_precision_score(current_data['actual'], current_data['pred_proba'])
         current_illicit_rate = np.mean(current_data['actual'] == 1)
         
         rolling_metrics.append({
             'cutoff_time': cutoff_time,
-            'pr_auc': current_pr_auc,
+            'ap': current_ap,
             'illicit_rate': current_illicit_rate,
             'sample_size': len(current_data),
             'illicit_count': sum(current_data['actual'] == 1)
@@ -500,7 +465,7 @@ def plot_evals(est, X_test, y_test, y_train,*, time_steps_test=None):
     temporal_fig, ax1 = plt.subplots(figsize=(12, 6))
 
     # Plot PR AUC on primary y-axis
-    ax1.plot(rolling_df['cutoff_time'], rolling_df['pr_auc'], 'b-o', linewidth=2, 
+    ax1.plot(rolling_df['cutoff_time'], rolling_df['ap'], 'b-o', linewidth=2, 
                         label='Rolling PR AUC')
     ax1.set_xlabel('Time Step Cutoff', fontsize=12)
     ax1.set_ylabel('PR AUC', color='blue', fontsize=12)

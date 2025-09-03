@@ -4,6 +4,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 import sys
 sys.path.append('./')
 from utils import *
+from sklearn.metrics import average_precision_score, make_scorer
 
 import joblib
 import json
@@ -42,7 +43,7 @@ def hyperparams_search(
             ('est', LogisticRegression(max_iter=max_iter, solver='liblinear')),        
         ]),
         param_grid=param_grid,
-        scoring=pr_auc_scorer,
+        scoring=make_scorer(average_precision_score, response_method="predict_proba"),
         cv=TemporalRollingCV(n_splits=n_splits),
         n_jobs=n_jobs,
         verbose=verbose
@@ -81,7 +82,7 @@ def validation_curve(
         param_name="est__C",
         param_range=param_range,
         n_jobs=n_jobs,
-        scoring=pr_auc_scorer,
+        scoring=make_scorer(average_precision_score, response_method="predict_proba"),
         score_name="PR AUC",
         cv=TemporalRollingCV(n_splits=n_splits),
         verbose=verbose,
