@@ -375,7 +375,9 @@ def _get_marginals_ticks(x_labels, N=10):
     """
     Helper for plot_marginals: reduces the number of x-ticks for readability.
     """
-    x = list(range(len(x_labels)))  # or use the actual tick positions if available
+    x = np.array(range(len(x_labels)))  # convert to numpy array for fancy indexing
+    x_labels = np.array(x_labels)  # convert to numpy array for fancy indexing
+    
     if len(x_labels) > N:
         step = max(1, len(x_labels) // N)
         shown_idx = list(range(0, len(x_labels), step))
