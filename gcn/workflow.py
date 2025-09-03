@@ -78,3 +78,16 @@ def hyperparams_search(
         plt.close(fig)
         
     
+def evaluation():
+    data, (train_val_idx, test_idx) = _load_graph()
+    rand_cv = joblib.load(os.path.join(SCRIPT_DIR, 'gnn_rand_cv.joblib'))
+    best_est = rand_cv.best_estimator_
+
+    y_test= data.y[test_idx].cpu().numpy()
+    y_train_val = data.y[train_val_idx].cpu().numpy()
+    time_steps_test = data.time[test_idx].cpu().numpy()
+    pr_fig, temporal_fig = plot_evals(best_est, test_idx, y_test, y_train_val, time_steps_test=time_steps_test)
+    pr_fig.savefig(os.path.join(SCRIPT_DIR, 'precision_recall_curve.png'), bbox_inches='tight', dpi=300)
+    temporal_fig.savefig(os.path.join(SCRIPT_DIR, 'temporal_eval.png'), bbox_inches='tight', dpi=300)
+    plt.close(pr_fig)
+    plt.close(temporal_fig)
