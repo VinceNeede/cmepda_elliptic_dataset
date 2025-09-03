@@ -391,7 +391,7 @@ def plot_evals(est, X_test, y_test, y_train,*, time_steps_test=None):
     """
     Generate two evaluation plots for a classifier:
     1. Precision-Recall curve on the test set.
-    2. Rolling/cumulative PR AUC and illicit rate by time step.
+    2. Rolling/cumulative AP and illicit rate by time step.
 
     Parameters
     ----------
@@ -411,7 +411,7 @@ def plot_evals(est, X_test, y_test, y_train,*, time_steps_test=None):
     pr_fig : matplotlib.figure.Figure
         Figure for the precision-recall curve.
     temporal_fig : matplotlib.figure.Figure
-        Figure for the rolling/cumulative PR AUC and illicit rate by time step.
+        Figure for the rolling/cumulative AP and illicit rate by time step.
     """
     y_pred_proba = est.predict_proba(X_test)[:, 1]
     y_pred = est.predict(X_test)
@@ -464,11 +464,11 @@ def plot_evals(est, X_test, y_test, y_train,*, time_steps_test=None):
     # Create figure with two y-axes
     temporal_fig, ax1 = plt.subplots(figsize=(12, 6))
 
-    # Plot PR AUC on primary y-axis
+    # Plot AP on primary y-axis
     ax1.plot(rolling_df['cutoff_time'], rolling_df['ap'], 'b-o', linewidth=2, 
-                        label='Rolling PR AUC')
+                        label='Rolling AP')
     ax1.set_xlabel('Time Step Cutoff', fontsize=12)
-    ax1.set_ylabel('PR AUC', color='blue', fontsize=12)
+    ax1.set_ylabel('AP', color='blue', fontsize=12)
     ax1.tick_params(axis='y', labelcolor='blue')
     ax1.grid(True, alpha=0.3)
 
