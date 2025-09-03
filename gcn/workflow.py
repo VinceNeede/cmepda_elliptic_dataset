@@ -8,10 +8,12 @@ from gnn_model import GNNBinaryClassifier
 
 import joblib
 import json
+import torch
 
 import matplotlib.pyplot as plt
 
-from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import RandomizedSearchCV
+from scipy.stats import randint, uniform, loguniform
 from torch_geometric.data import Data
 from torch_geometric.nn import GCN
 
@@ -38,35 +40,39 @@ def _load_graph():
     return data, (train_val_idx, test_idx)
 
 def hyperparams_search(
-    param_grid = {
-        "est__hidden_channels": [16, 32, 64],
-        "est__num_layers": [2, 3, 4],
-        "est__dropout": [0.0, 0.2, 0.5],
-        "est__lr": [0.001, 0.01, 0.1],
+    param_distributions = {
+        "hidden_dim": [16, 32, 64],
+        "num_layers": randint(2, 6),
+        "dropout": uniform(0.0, 0.8),
+        "learning_rate_init": loguniform(1e-4, 1e-1),
+        "weight_decay": loguniform(1e-6, 1e-2),
     },
+    n_iter=64,
     n_splits=5,
-    n_jobs=-1,
+    n_jobs=1,  # Use single job to avoid memory issues with large graphs
     verbose=10,
+    max_iter=1000,
 ):
     data, (train_val_idx, test_idx) = _load_graph()
-    grid_cv = GridSearchCV(
-        GNNBinaryClassifier(data, GCN),
-        param_grid=param_grid,
+    rand_cv = RandomizedSearchCV(
+        GNNBinaryClassifier(data, GCN, max_iter=max_iter),
+        param_distributions=param_distributions,
         scoring='average_precision',
         cv=TemporalRollingCV(n_splits),
         n_jobs=n_jobs,
         verbose=verbose,
+        n_iter=n_iter,
     )
     train_val_idx_np = train_val_idx.cpu().numpy()
     y = data.y.cpu().numpy()
     times = data.time.cpu().numpy()
-    grid_cv.fit(train_val_idx_np, y[train_val_idx_np], groups=times[train_val_idx_np])
+    rand_cv.fit(train_val_idx_np, y[train_val_idx_np], groups=times[train_val_idx_np])
 
-    joblib.dump(grid_cv, os.path.join(SCRIPT_DIR, 'gnn_grid_cv.joblib'))
-    
-    with open(os.path.join(SCRIPT_DIR, 'gnn_grid_cv_best_params.json'), 'w') as f:
-        json.dump(grid_cv.best_params_, f, indent=2)    
-    marginals = plot_marginals(grid_cv.cv_results_)
+    joblib.dump(rand_cv, os.path.join(SCRIPT_DIR, 'gnn_rand_cv.joblib'))
+
+    with open(os.path.join(SCRIPT_DIR, 'gnn_rand_cv_best_params.json'), 'w') as f:
+        json.dump(rand_cv.best_params_, f, indent=2)
+    marginals = plot_marginals(rand_cv.cv_results_)
     for param, fig in marginals.items():
         fig.savefig(os.path.join(SCRIPT_DIR, f'{param}_marginal.png'), bbox_inches='tight', dpi=300)
         plt.close(fig)
