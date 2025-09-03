@@ -68,9 +68,9 @@ def hyperparams_search(
     times = data.time.cpu().numpy()
     rand_cv.fit(train_val_idx_np, y[train_val_idx_np], groups=times[train_val_idx_np])
 
-    joblib.dump(rand_cv, os.path.join(SCRIPT_DIR, 'gnn_rand_cv.joblib'))
+    joblib.dump(rand_cv, os.path.join(SCRIPT_DIR, 'gcn_rand_cv.joblib'))
 
-    with open(os.path.join(SCRIPT_DIR, 'gnn_rand_cv_best_params.json'), 'w') as f:
+    with open(os.path.join(SCRIPT_DIR, 'gcn_rand_cv_best_params.json'), 'w') as f:
         json.dump(rand_cv.best_params_, f, indent=2)
     marginals = plot_marginals(rand_cv.cv_results_)
     for param, fig in marginals.items():
@@ -80,7 +80,7 @@ def hyperparams_search(
     
 def evaluation():
     data, (train_val_idx, test_idx) = _load_graph()
-    rand_cv = joblib.load(os.path.join(SCRIPT_DIR, 'gnn_rand_cv.joblib'))
+    rand_cv = joblib.load(os.path.join(SCRIPT_DIR, 'gcn_rand_cv.joblib'))
     best_est = rand_cv.best_estimator_
 
     y_test= data.y[test_idx].cpu().numpy()
