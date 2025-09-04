@@ -12,10 +12,11 @@ import json
 import matplotlib.pyplot as plt
 
 
-from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import RandomizedSearchCV
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import ValidationCurveDisplay
+from scipy.stats import randint, uniform
 
 def _load_data():
     nodes_df, edges_df = process_dataset()
@@ -24,11 +25,13 @@ def _load_data():
     return (X_train, y_train), (X_test, y_test)
 
 def hyperparams_search(
-    param_grid={
-        "est__C": np.logspace(-4, 4, 10),
+    distributions={
+        "est__C": uniform(1e-4, 1e4),
         "est__penalty": ["l1", "l2"],
-        "est__class_weight": [None, "balanced"]
+        "est__class_weight": [None, "balanced"],
+        "est__tol": uniform(1e-5, 1e-4),
     },
+    n_iter=64,
     max_iter=5000,
     n_splits=5,
     n_jobs=-1,
@@ -37,12 +40,13 @@ def hyperparams_search(
     """ =========== LOAD DATA =========== """
     (X_train, y_train), (X_test, y_test) = _load_data()
 
-    grid = GridSearchCV(
+    grid = RandomizedSearchCV(
         Pipeline([
             ('drop_time', DropTime()),
             ('est', LogisticRegression(max_iter=max_iter, solver='liblinear')),        
         ]),
-        param_grid=param_grid,
+        param_distributions=distributions,
+        n_iter=n_iter,
         scoring=make_scorer(average_precision_score, response_method="predict_proba"),
         cv=TemporalRollingCV(n_splits=n_splits),
         n_jobs=n_jobs,

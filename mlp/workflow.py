@@ -28,12 +28,25 @@ class MLPWrapper(MLPClassifier):
         self,
         num_layers=2,
         hidden_dim=16,
+        hidden_layer_sizes=None,  # Add this to make sklearn happy
         alpha=0.0001,
         learning_rate_init=0.001,
         batch_size='auto',
         max_iter=1000,
         ):
-        hidden_layer_sizes = tuple([hidden_dim]*num_layers)
+        
+        self.num_layers = num_layers
+        self.hidden_dim = hidden_dim
+        self.hidden_layer_sizes = hidden_layer_sizes  # Store it as an attribute
+        self.alpha = alpha
+        self.learning_rate_init = learning_rate_init
+        self.batch_size = batch_size
+        self.max_iter = max_iter
+        
+        # Use hidden_layer_sizes if provided, otherwise construct from num_layers/hidden_dim
+        if hidden_layer_sizes is None:
+            hidden_layer_sizes = tuple([hidden_dim]*num_layers)
+        
         super().__init__(
             hidden_layer_sizes=hidden_layer_sizes,
             alpha=alpha,
@@ -44,7 +57,15 @@ class MLPWrapper(MLPClassifier):
             early_stopping=False,
         )
         
-
+    def set_params(self, **params):
+        if 'num_layers' in params or 'hidden_dim' in params:
+            num_layers = params.pop('num_layers', self.num_layers)
+            hidden_dim = params.pop('hidden_dim', self.hidden_dim)
+            params['hidden_layer_sizes'] = tuple([hidden_dim]*num_layers)
+            self.num_layers = num_layers
+            self.hidden_dim = hidden_dim
+        return super().set_params(**params)
+        
 def hyperparams_search(
     param_distributions={
         "est__num_layers": randint(1, 5),
