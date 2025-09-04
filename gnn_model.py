@@ -30,6 +30,10 @@ class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
         Initial learning rate for the Adam optimizer.
     weight_decay : float, default=5e-4
         L2 regularization strength.
+    balance_loss : bool, default=True
+        Whether to balance the loss function by weighting positive samples.
+        If True, uses positive class weighting in BCEWithLogitsLoss based on
+        class frequencies. If False, uses unweighted loss.
     max_iter : int, default=200
         Maximum number of training iterations.
     verbose : bool, default=False
@@ -41,6 +45,9 @@ class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
     device : str or torch.device, default='auto'
         Device to use for computation. Can be 'cpu', 'cuda', 'auto', or a torch.device object.
         If 'auto', will use CUDA if available, otherwise CPU.
+    heads : int, default=None
+        Number of attention heads for GAT models. Only applicable when model=GAT.
+        Ignored with a warning for other model types.
     **kwargs : dict
         Additional keyword arguments passed to the model constructor.
         
@@ -122,6 +129,7 @@ class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
         dropout=0.5,
         learning_rate_init=0.01,
         weight_decay=5e-4,
+        balance_loss=True,
         max_iter=200,
         verbose=False,
         n_iter_no_change=10,
@@ -138,6 +146,7 @@ class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
         self.dropout = dropout
         self.learning_rate_init = learning_rate_init
         self.weight_decay = weight_decay
+        self.balance_loss = balance_loss
         self.max_iter = max_iter
         self.verbose = verbose
         self.n_iter_no_change = n_iter_no_change
@@ -230,8 +239,12 @@ class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
         else:
             train_indices = train_indices.to(self.device_)
         
-        criterion = torch.nn.BCEWithLogitsLoss(pos_weight=self._get_pos_weight(train_indices))
-
+        
+        if self.balance_loss:
+            criterion = torch.nn.BCEWithLogitsLoss(pos_weight=self._get_pos_weight(train_indices))
+        else:
+            criterion = torch.nn.BCEWithLogitsLoss()
+        
         # Early stopping variables
         best_loss = float('inf')
         no_improvement_count = 0
@@ -302,21 +315,10 @@ class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
         ValueError
             If the classifier has not been fitted yet.
         """
-        test_indices = X
-        if not hasattr(self, 'model_'):
-            raise ValueError("This GNNBinaryClassifier instance is not fitted yet.")
         
-        # Convert indices to tensor and move to device
-        if not isinstance(test_indices, torch.Tensor):
-            test_indices = torch.tensor(test_indices, dtype=torch.long, device=self.device_)
-        else:
-            test_indices = test_indices.to(self.device_)
-        
-        self.model_.eval()
-        with torch.no_grad():
-            out = self.model_(self.data.x, self.data.edge_index).squeeze()
-            predictions = torch.sigmoid(out[test_indices]) > 0.5
-            return predictions.int().cpu().numpy()
+        probs = self.predict_proba(X)
+        predictions = (probs[:, 1] > 0.5).astype(int)
+        return predictions
     
     def predict_proba(self, X):
         """
@@ -339,6 +341,8 @@ class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
             If the classifier has not been fitted yet.
         """
         test_indices = X
+        
+
         if not hasattr(self, 'model_'):
             raise ValueError("This GNNBinaryClassifier instance is not fitted yet.")
         
@@ -359,7 +363,6 @@ class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
                 proba_positive = np.full(len(test_indices), 0.5)
             else:
                 # Clamp extreme values to prevent numerical issues
-                raw_outputs = torch.clamp(raw_outputs, min=-10, max=10)
                 proba_positive = torch.sigmoid(raw_outputs).cpu().numpy()
             
             proba_negative = 1 - proba_positive
