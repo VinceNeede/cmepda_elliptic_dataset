@@ -12,7 +12,7 @@ import torch
 
 import matplotlib.pyplot as plt
 
-from sklearn.model_selection import RandomizedSearchCV
+from sklearn.model_selection import RandomizedSearchCV, GridSearchCV
 from scipy.stats import randint, uniform, loguniform
 from torch_geometric.data import Data
 from torch_geometric.nn import GCN
@@ -46,6 +46,9 @@ def hyperparams_search(
         "dropout": uniform(0.0, 0.8),
         "learning_rate_init": loguniform(1e-4, 1e-1),
         "weight_decay": loguniform(1e-6, 1e-2),
+        "balance_loss": [True, False],
+        "norm": [None, "batch", "layer", "graph"],
+        "jk": ["last", "max", "cat"],
     },
     n_iter=64,
     n_splits=5,
@@ -54,14 +57,14 @@ def hyperparams_search(
     max_iter=1000,
 ):
     data, (train_val_idx, test_idx) = _load_graph()
-    rand_cv = RandomizedSearchCV(
+    rand_cv = GridSearchCV(
         GNNBinaryClassifier(data, GCN, max_iter=max_iter),
-        param_distributions=param_distributions,
+        param_grid=param_distributions,
         scoring='average_precision',
         cv=TemporalRollingCV(n_splits),
         n_jobs=n_jobs,
         verbose=verbose,
-        n_iter=n_iter,
+        # n_iter=n_iter,
     )
     train_val_idx_np = train_val_idx.cpu().numpy()
     y = data.y.cpu().numpy()

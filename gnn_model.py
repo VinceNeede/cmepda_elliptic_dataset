@@ -127,6 +127,8 @@ class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
         hidden_dim=64,
         num_layers=3,
         dropout=0.5,
+        norm=None,
+        jk='last',
         learning_rate_init=0.01,
         weight_decay=5e-4,
         balance_loss=True,
@@ -144,6 +146,8 @@ class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
         self.dropout = dropout
+        self.norm = norm
+        self.jk = jk
         self.learning_rate_init = learning_rate_init
         self.weight_decay = weight_decay
         self.balance_loss = balance_loss
@@ -228,6 +232,8 @@ class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
             out_channels=1,
             num_layers=self.num_layers,
             dropout=self.dropout,
+            norm=self.norm,
+            jk=self.jk,
             **self.kwargs
         ).to(self.device_)
         
