@@ -5,6 +5,27 @@ import numpy as np
 import warnings
 from torch_geometric.nn import GAT, GCN
 
+def get_norm_arg(norm_str):
+    if norm_str is None:
+        return None
+    norm_args = norm_str.split('_')
+    if len(norm_args) == 1:
+        return norm_args[0], {}
+
+    norm = norm_args[0]
+    kwargs = {}
+    for arg in norm_args[1:]:
+        key, value = arg.split('=')
+        try:
+            value = int(value)
+        except ValueError:
+            try:
+                value = float(value)
+            except ValueError:
+                pass
+        kwargs[key] = value
+    return norm, kwargs
+
 class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
     """
     Graph Neural Network Binary Classifier with early stopping.
@@ -128,6 +149,7 @@ class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
         num_layers=3,
         dropout=0.5,
         norm=None,
+        norm_kwargs=None,
         jk='last',
         learning_rate_init=0.01,
         weight_decay=5e-4,
@@ -146,7 +168,7 @@ class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
         self.dropout = dropout
-        self.norm = norm
+        self.norm, self.norm_kwargs = get_norm_arg(norm)
         self.jk = jk
         self.learning_rate_init = learning_rate_init
         self.weight_decay = weight_decay
@@ -233,6 +255,7 @@ class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
             num_layers=self.num_layers,
             dropout=self.dropout,
             norm=self.norm,
+            norm_kwargs=self.norm_kwargs,
             jk=self.jk,
             **self.kwargs
         ).to(self.device_)
@@ -373,32 +396,11 @@ class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
             
             proba_negative = 1 - proba_positive
             return np.column_stack([proba_negative, proba_positive])
-    
-    # def decision_function(self, X):
-    #     """
-    #     Predict confidence scores for samples.
         
-    #     Parameters
-    #     ----------
-    #     X : array-like
-    #         Indices of test samples in the graph.
-            
-    #     Returns
-    #     -------
-    #     scores : ndarray of shape (n_samples,)
-    #         Confidence scores per sample for the positive class.
-    #     """
-    #     test_indices = X
-    #     if not hasattr(self, 'model_'):
-    #         raise ValueError("This GNNBinaryClassifier instance is not fitted yet.")
-        
-    #     # Convert indices to tensor and move to device
-    #     if not isinstance(test_indices, torch.Tensor):
-    #         test_indices = torch.tensor(test_indices, dtype=torch.long, device=self.device_)
-    #     else:
-    #         test_indices = test_indices.to(self.device_)
-        
-    #     self.model_.eval()
-    #     with torch.no_grad():
-    #         out = self.model_(self.data.x, self.data.edge_index).squeeze()
-    #         return out[test_indices].cpu().numpy()
+    def set_params(self, **params):
+        if 'norm' in params:
+            norm = params['norm']
+            self.norm, self.norm_kwargs = get_norm_arg(norm)
+            params['norm'] = self.norm  # Ensure norm is updated in params
+            params['norm_kwargs'] = self.norm_kwargs  # Ensure norm_kwargs is updated in params
+        return super().set_params(**params)
