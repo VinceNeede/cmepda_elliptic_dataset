@@ -1,9 +1,8 @@
-from logging import warn
 from sklearn.base import BaseEstimator, ClassifierMixin
 import torch
 import numpy as np
 import warnings
-from torch_geometric.nn import GAT, GCN
+from torch_geometric.nn import GAT, GCN, PairNorm
 
 def get_norm_arg(norm_str):
     if not isinstance(norm_str, str):
@@ -24,6 +23,8 @@ def get_norm_arg(norm_str):
             except ValueError:
                 pass
         kwargs[key] = value
+    if norm == 'pair':
+        return PairNorm(**(kwargs or {})), {}
     return norm, kwargs
 
 class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
@@ -149,7 +150,6 @@ class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
         num_layers=3,
         dropout=0.5,
         norm=None,
-        norm_kwargs=None,
         jk='last',
         learning_rate_init=0.01,
         weight_decay=5e-4,
@@ -168,11 +168,7 @@ class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
         self.dropout = dropout
-        # Store original norm parameter as-is for sklearn compatibility
         self.norm = norm
-        self.norm_kwargs = norm_kwargs if norm_kwargs is not None else {}
-        # Parse norm for internal use
-        self._parsed_norm, self._parsed_norm_kwargs = get_norm_arg(norm)
         self.jk = jk
         self.learning_rate_init = learning_rate_init
         self.weight_decay = weight_decay
@@ -252,14 +248,15 @@ class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
         """
         train_indices = X
         num_features = self.data.x.shape[1]
+        norm_layer, norm_kwargs = get_norm_arg(self.norm)
         self.model_ = self.model(
             in_channels=num_features,
             hidden_channels=self.hidden_dim,
             out_channels=1,
             num_layers=self.num_layers,
             dropout=self.dropout,
-            norm=self._parsed_norm,
-            norm_kwargs=self._parsed_norm_kwargs,
+            norm=norm_layer,
+            norm_kwargs=norm_kwargs,
             jk=self.jk,
             **self.kwargs
         ).to(self.device_)
@@ -401,12 +398,3 @@ class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
             proba_negative = 1 - proba_positive
             return np.column_stack([proba_negative, proba_positive])
         
-    def set_params(self, **params):
-        # Handle norm parameter specially to maintain sklearn compatibility
-        if 'norm_kwargs' in params:
-            raise ValueError("Setting 'norm_kwargs' directly is not supported. Include them in the 'norm' string if needed.")
-        if 'norm' in params:
-            norm = params['norm']
-            # Parse for internal use
-            self._parsed_norm, self._parsed_norm_kwargs = get_norm_arg(norm)
-        return super().set_params(**params)
