@@ -6,8 +6,8 @@ import warnings
 from torch_geometric.nn import GAT, GCN
 
 def get_norm_arg(norm_str):
-    if norm_str is None:
-        return None
+    if not isinstance(norm_str, str):
+        return norm_str, {}
     norm_args = norm_str.split('_')
     if len(norm_args) == 1:
         return norm_args[0], {}
@@ -168,7 +168,11 @@ class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
         self.dropout = dropout
-        self.norm, self.norm_kwargs = get_norm_arg(norm)
+        # Store original norm parameter as-is for sklearn compatibility
+        self.norm = norm
+        self.norm_kwargs = norm_kwargs if norm_kwargs is not None else {}
+        # Parse norm for internal use
+        self._parsed_norm, self._parsed_norm_kwargs = get_norm_arg(norm)
         self.jk = jk
         self.learning_rate_init = learning_rate_init
         self.weight_decay = weight_decay
@@ -254,8 +258,8 @@ class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
             out_channels=1,
             num_layers=self.num_layers,
             dropout=self.dropout,
-            norm=self.norm,
-            norm_kwargs=self.norm_kwargs,
+            norm=self._parsed_norm,
+            norm_kwargs=self._parsed_norm_kwargs,
             jk=self.jk,
             **self.kwargs
         ).to(self.device_)
@@ -398,9 +402,11 @@ class GNNBinaryClassifier(ClassifierMixin, BaseEstimator):
             return np.column_stack([proba_negative, proba_positive])
         
     def set_params(self, **params):
+        # Handle norm parameter specially to maintain sklearn compatibility
+        if 'norm_kwargs' in params:
+            raise ValueError("Setting 'norm_kwargs' directly is not supported. Include them in the 'norm' string if needed.")
         if 'norm' in params:
             norm = params['norm']
-            self.norm, self.norm_kwargs = get_norm_arg(norm)
-            params['norm'] = self.norm  # Ensure norm is updated in params
-            params['norm_kwargs'] = self.norm_kwargs  # Ensure norm_kwargs is updated in params
+            # Parse for internal use
+            self._parsed_norm, self._parsed_norm_kwargs = get_norm_arg(norm)
         return super().set_params(**params)
